@@ -15,7 +15,7 @@ interface Room {
 }
 
 interface Message {
-    type: 'JOIN_ROOM' | 'CREATE_ROOM' | 'CHAT_MESSAGE' | 'REMOVE_USER' | 'USER_JOINED' | 'USER_LEFT' | 'ADMIN_LEFT' | 'ROOM_UPDATE';
+    type: 'JOIN_ROOM' | 'CREATE_ROOM' | 'CHAT_MESSAGE' | 'REMOVE_USER' | 'USER_JOINED' | 'USER_LEFT' | 'ADMIN_LEFT' | 'ROOM_UPDATE' | 'CONNECT';
     payload: any;
 }
 
@@ -37,9 +37,14 @@ wss.on("connection", (ws: WebSocket) => {
             return;
         }
 
-        if (!["CREATE_ROOM", "JOIN_ROOM", "CHAT_MESSAGE", "REMOVE_USER"].includes(parsedMsg.type)) {
+        if (!["CREATE_ROOM", "JOIN_ROOM", "CHAT_MESSAGE", "REMOVE_USER", "CONNECT"].includes(parsedMsg.type)) {
+            console.log("type:", parsedMsg.type)
             ws.send(JSON.stringify({ error: "Unknown message type." }));
             return;
+        }
+
+        if (parsedMsg.type === "CONNECT") {
+            ws.send(JSON.stringify({ type: "ROOMS_DETAIL", payload: { roomLength: 4 - rooms.length } }))
         }
 
         // Create a new room with room admin
@@ -93,7 +98,14 @@ wss.on("connection", (ws: WebSocket) => {
                     roomId: currRoom.id,
                 }
                 currRoom.users.push(newUser);
-                ws.send(JSON.stringify({ type: "USER_JOINED", payload: { user: newUser, room: currRoom } }));
+
+                ws.send(JSON.stringify({ type: "USER_DETAILS", payload: { user: newUser } }))
+                currRoom.users.forEach(user => {
+                    const userWs = connections.get(user.id);
+                    if (userWs) {
+                        userWs.send(JSON.stringify({ type: "USER_JOINED", payload: { user: newUser, room: currRoom } }));
+                    }
+                })
             } else {
                 ws.send(JSON.stringify({ error: "You are already in this room." }));
             }
@@ -138,10 +150,12 @@ wss.on("connection", (ws: WebSocket) => {
                 ws.send(JSON.stringify({ error: "No corresponding user found." }))
             } else {
                 currRoom.users = currRoom.users.filter(user => user.id !== parsedMsg.payload.userId)
-                const userWs = connections.get(parsedMsg.payload.userId);
-                if (userWs) {
-                    userWs.send(JSON.stringify({ type: "REMOVE_USER", payload: { user: existingUser, room: currRoom } }))
-                }
+                currRoom.users.forEach((user) => {
+                    const userWs = connections.get(parsedMsg.payload.userId);
+                    if (userWs) {
+                        userWs.send(JSON.stringify({ type: "USER_LEFT", payload: { user: existingUser, room: currRoom } }))
+                    }
+                })
             }
         }
 
