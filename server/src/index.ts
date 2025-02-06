@@ -15,7 +15,7 @@ interface Room {
 }
 
 interface Message {
-    type: 'JOIN_ROOM' | 'CREATE_ROOM' | 'CHAT_MESSAGE' | 'REMOVE_USER' | 'USER_JOINED' | 'USER_LEFT' | 'ADMIN_LEFT' | 'ROOM_UPDATE' | 'CONNECT';
+    type: 'JOIN_ROOM' | 'CREATE_ROOM' | 'CHAT_MESSAGE' | 'REMOVE_USER' | 'USER_JOINED' | 'USER_LEFT' | 'ADMIN_LEFT' | 'ROOM_UPDATE' | 'CONNECT' | "LEAVE_ROOM";
     payload: any;
 }
 
@@ -37,8 +37,7 @@ wss.on("connection", (ws: WebSocket) => {
             return;
         }
 
-        if (!["CREATE_ROOM", "JOIN_ROOM", "CHAT_MESSAGE", "REMOVE_USER", "CONNECT"].includes(parsedMsg.type)) {
-            console.log("type:", parsedMsg.type)
+        if (!["CREATE_ROOM", "JOIN_ROOM", "CHAT_MESSAGE", "REMOVE_USER", "CONNECT", "LEAVE_ROOM"].includes(parsedMsg.type)) {
             ws.send(JSON.stringify({ error: "Unknown message type." }));
             return;
         }
@@ -151,12 +150,37 @@ wss.on("connection", (ws: WebSocket) => {
             } else {
                 currRoom.users = currRoom.users.filter(user => user.id !== parsedMsg.payload.userId)
                 currRoom.users.forEach((user) => {
-                    const userWs = connections.get(parsedMsg.payload.userId);
+                    const userWs = connections.get(user.id);
                     if (userWs) {
-                        userWs.send(JSON.stringify({ type: "USER_LEFT", payload: { user: existingUser, room: currRoom } }))
+                        userWs.send(JSON.stringify({ type: "USER_LEFT", payload: { room: currRoom } }))
                     }
                 })
             }
+        }
+
+
+        if (parsedMsg.type === "LEAVE_ROOM") {
+            const currRoom = rooms.find(room => room.users.find((user) => user.id === userId));
+            if (!currRoom) return;
+
+            if (currRoom.adminId === userId) {
+                currRoom.users.forEach((user) => {
+                    const userWs = connections.get(user.id);
+                    if (userWs) {
+                        userWs.send(JSON.stringify({ type: "ADMIN_LEFT", payload: { user: user, room: currRoom } }));
+                    }
+                });
+                rooms = rooms.filter(room => room !== currRoom);
+                return;
+            }
+
+            currRoom.users = currRoom.users.filter(user => user.id !== userId);
+            currRoom.users.forEach((user) => {
+                const userWs = connections.get(user.id);
+                if (userWs) {
+                    userWs.send(JSON.stringify({ type: "USER_LEFT", payload: { room: currRoom } }));
+                }
+            });
         }
 
     })
@@ -165,11 +189,13 @@ wss.on("connection", (ws: WebSocket) => {
         const currRoom = rooms.find(room => room.users.find((user) => user.id === userId));
         if (!currRoom) return;
 
+        ws.send(JSON.stringify({ type: "USER_LEFT", payload: { room: currRoom } }));
+
         if (currRoom.adminId === userId) {
             currRoom.users.forEach((user) => {
                 const userWs = connections.get(user.id);
                 if (userWs) {
-                    userWs.send(JSON.stringify({ type: "ADMIN_LEFT", payload: { user: user, room: currRoom } }));
+                    userWs.send(JSON.stringify({ type: "ADMIN_LEFT", payload: { room: currRoom } }));
                 }
             });
             rooms = rooms.filter(room => room !== currRoom);
@@ -180,7 +206,7 @@ wss.on("connection", (ws: WebSocket) => {
         currRoom.users.forEach((user) => {
             const userWs = connections.get(user.id);
             if (userWs) {
-                userWs.send(JSON.stringify({ type: "USER_LEFT", payload: { user: user, room: currRoom } }));
+                userWs.send(JSON.stringify({ type: "USER_LEFT", payload: { room: currRoom } }));
             }
         });
     })
