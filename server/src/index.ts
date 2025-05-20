@@ -186,6 +186,7 @@ wss.on("connection", (ws: WebSocket) => {
     })
     // Update if someone leaves the room
     ws.on("close", () => {
+        connections.delete(userId);
         const currRoom = rooms.find(room => room.users.find((user) => user.id === userId));
         if (!currRoom) return;
 
